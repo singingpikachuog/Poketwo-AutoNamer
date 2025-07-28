@@ -1,6 +1,6 @@
 import os
 import discord
-from predict import Predict  # replace prediction_file with your ONNX file name
+from predict import Prediction  # use the Prediction class from predict.py
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -16,11 +16,11 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # Ignore bot's own messages
+    # Ignore our own messages
     if message.author == bot.user:
         return
 
-    # Only react to Pokétwo messages
+    # Only react to Pokétwo spawns
     if str(message.author) == "Pokétwo#8236":
         if message.attachments:
             for attachment in message.attachments:
