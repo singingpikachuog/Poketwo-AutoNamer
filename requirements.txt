@@ -3,7 +3,7 @@ torchvision==0.15.2+cpu
 -f https://download.pytorch.org/whl/torch_stable.html
 numpy
 pillow
-opencv-python
+opencv-python-headless
 discord.py
 tqdm
 requests
