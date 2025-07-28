@@ -1,0 +1,8 @@
+discord.py
+torch
+torchvision
+numpy
+pillow
+opencv-python
+tqdm
+requests
