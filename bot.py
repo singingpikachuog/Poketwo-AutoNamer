@@ -1,29 +1,37 @@
 import os
 import discord
-from discord.ext import commands
-from main_tensor import PokeNet  # import your classifier
+from predict import Predict  # replace prediction_file with your ONNX file name
 
-TOKEN = os.getenv("DISCORD_TOKEN")  # set this in Railway Variables
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = discord.Client(intents=intents)
 
-# Load the classifier
-net = PokeNet()
+predictor = Prediction()
 
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-@bot.command()
-async def identify(ctx, url: str):
-    """Identify Pokémon from an image URL"""
-    await ctx.send("🔍 Analyzing image...")
-    name, acc = net.predict_url(url)
-    if name:
-        await ctx.send(f"🎯 I think this is **{name}** ({acc}% confidence)")
-    else:
-        await ctx.send("❌ Sorry, I couldn't identify the Pokémon.")
+@bot.event
+async def on_message(message):
+    # Ignore bot's own messages
+    if message.author == bot.user:
+        return
+
+    # Only react to Pokétwo messages
+    if str(message.author) == "Pokétwo#8236":
+        if message.attachments:
+            for attachment in message.attachments:
+                if attachment.url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    await message.channel.send("🔍 Identifying Pokémon...")
+                    try:
+                        name, confidence = predictor.predict(attachment.url)
+                        await message.channel.send(
+                            f"🎯 I think it's **{name}** ({confidence} confident)"
+                        )
+                    except Exception as e:
+                        await message.channel.send(f"❌ Error: {e}")
 
 bot.run(TOKEN)
