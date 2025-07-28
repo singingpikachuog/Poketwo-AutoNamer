@@ -7,3 +7,4 @@ opencv-python-headless
 discord.py
 tqdm
 requests
+onnxruntime
