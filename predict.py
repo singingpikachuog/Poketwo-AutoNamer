@@ -124,7 +124,7 @@ class Prediction:
         
         confidence = f"{prob * 100:.2f}%"
         
-        return pokemon_name, confidence
+        return pokemon_name, random_name, dex_number, confidence
 
 def main():
     try:
@@ -134,12 +134,14 @@ def main():
         return
 
     while True:
-        url = input("Enter Pokémon image URL (or 'q' to quit): ").strip()
+        url = input("🔍 Who's that Pokémon? Enter image URL (or 'q' to quit): ").strip()
         if url.lower() == 'q':
             break
         try:
-            pokemon_name, confidence = predictor.predict(url)
+            pokemon_name, random_name, dex_number, confidence = predictor.predict(url)
             print(f"Pokémon Name: {pokemon_name}")
+            print(f"Random Name: {random_name}")
+            print(f"Dex Number: {dex_number}")
             print(f"Confidence: {confidence}")
         except Exception as e:
             print(f"Error: {e}")
