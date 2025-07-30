@@ -32,7 +32,7 @@ async def on_message(message):
             name, confidence = predictor.predict(url)
             name = name.replace("_", " ")  # ✅ Replace underscores with spaces
             await message.channel.send(
-                f"🎯 I think it's **{name}** ({confidence} confident)"
+                f"{name}: {confidence}"
             )
         except Exception as e:
             await message.channel.send(f"❌ Error: {e}")
@@ -52,7 +52,6 @@ async def on_message(message):
                 image_url = embed.image.url
 
         if image_url:
-            await message.channel.send("🔍 Who's That Pokémon...")
             try:
                 name, confidence = predictor.predict(image_url)
                 name = name.replace("_", " ")  # ✅ Replace underscores with spaces
