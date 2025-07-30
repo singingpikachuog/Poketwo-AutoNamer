@@ -15,7 +15,6 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    # Debug log so we see all messages
     print(f"📩 Saw message from {message.author}: {message.content}")
 
     if message.author == bot.user:
@@ -27,10 +26,11 @@ async def on_message(message):
 
     # 2) Manual predict command
     if message.content.startswith("!identify "):
-        url = message.content.split(" ", 1)[1]  # get URL after !identify
+        url = message.content.split(" ", 1)[1]
         await message.channel.send("🔍 Identifying Pokémon...")
         try:
             name, confidence = predictor.predict(url)
+            name = name.replace("_", " ")  # ✅ Replace underscores with spaces
             await message.channel.send(
                 f"🎯 I think it's **{name}** ({confidence} confident)"
             )
@@ -41,13 +41,11 @@ async def on_message(message):
     if message.author.id == 716390085896962058:  # Pokétwo user ID
         image_url = None
 
-        # Check for attachments
         if message.attachments:
             for attachment in message.attachments:
                 if attachment.url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     image_url = attachment.url
 
-        # Check for embed images
         if not image_url and message.embeds:
             embed = message.embeds[0]
             if embed.image and embed.image.url:
@@ -57,8 +55,9 @@ async def on_message(message):
             await message.channel.send("🔍 Identifying Pokémon...")
             try:
                 name, confidence = predictor.predict(image_url)
+                name = name.replace("_", " ")  # ✅ Replace underscores with spaces
                 await message.channel.send(
-                    f"{name} :({confidence})"
+                    f"{name}: {confidence}"
                 )
             except Exception as e:
                 await message.channel.send(f"❌ Error: {e}")
