@@ -1,85 +1,76 @@
 import os
-import discord
 import json
 import random
-from predict import Prediction  # your predictor
+import torch
+import torch.nn.functional as F
+from torchvision import transforms
+from PIL import Image
+import requests
+from io import BytesIO
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+class Prediction:
+    def __init__(self):
+        # Load your model
+        self.model_path = "model/pokemon_cnn.pt"
+        self.labels_path = "model/labels.txt"
+        self.data_path = "pokemon_data.txt"
 
-intents = discord.Intents.all()
-bot = discord.Client(intents=intents)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = torch.load(self.model_path, map_location=self.device)
+        self.model.eval()
 
-predictor = Prediction()
+        # Load labels
+        with open(self.labels_path, "r") as f:
+            self.labels = [line.strip() for line in f]
 
-# Load Pokémon data file
-with open("pokemon_data.txt", "r", encoding="utf-8") as f:
-    pokemon_data = json.load(f)
+        # Load Pokémon metadata
+        if os.path.exists(self.data_path):
+            with open(self.data_path, "r", encoding="utf-8") as f:
+                self.pokemon_data = json.load(f)
+        else:
+            self.pokemon_data = {}
 
-@bot.event
-async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
+        # Transform for input images
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
 
-def get_pokemon_info(label_name):
-    # Extract dex number (first 4 digits from label)
-    dex_number = label_name[:4].lstrip("0")  # remove leading zeros
-    if dex_number == "":
-        dex_number = "0"
-    # Search JSON
-    for key, poke in pokemon_data.items():
-        if str(poke.get("dex_number")) == dex_number:
-            # Choose a random name from "names" dict
-            names_dict = poke.get("names", {})
-            random_name = None
-            if names_dict:
-                random_name = random.choice(list(names_dict.values()))
-            return poke.get("name"), random_name, poke.get("dex_number")
-    return label_name, None, None
-
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
-
-    # Manual predict
-    if message.content.startswith("!identify "):
-        url = message.content.split(" ", 1)[1]
-        await message.channel.send("🔍 Identifying Pokémon...")
+    def predict(self, url):
         try:
-            label_name, confidence = predictor.predict(url)
-            name, random_name, dex = get_pokemon_info(label_name)
-            reply = f"🎯 Predicted Pokémon: **{name}** (confidence: {confidence})\n"
-            if random_name:
-                reply += f"🌐 Random Name: {random_name}\n"
-            if dex:
-                reply += f"📖 Dex Number: {dex}"
-            await message.channel.send(reply)
+            # Load image from URL
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            img = Image.open(BytesIO(response.content)).convert("RGB")
+            img = self.transform(img).unsqueeze(0).to(self.device)
+
+            # Run prediction
+            with torch.no_grad():
+                outputs = self.model(img)
+                probs = F.softmax(outputs, dim=1)
+                confidence, predicted = torch.max(probs, 1)
+
+            # Get label (dex + name)
+            full_label = self.labels[predicted.item()]
+            dex_number = full_label.split("_")[0]
+            clean_name = full_label[5:].replace("_", " ")
+
+            # Look up in pokemon_data.txt
+            pokemon_info = None
+            random_name = None
+            if self.pokemon_data:
+                for entry in self.pokemon_data.values():
+                    if str(entry.get("dex_number")).zfill(3) == dex_number:
+                        pokemon_info = entry
+                        random_name = random.choice(list(entry["names"].values())) if "names" in entry else None
+                        break
+
+            return {
+                "dex": dex_number,
+                "name": clean_name,
+                "confidence": round(confidence.item() * 100, 2),
+                "random_name": random_name
+            }
+
         except Exception as e:
-            await message.channel.send(f"❌ Error: {e}")
-
-    # Auto detect Pokétwo spawns
-    if message.author.id == 716390085896962058:
-        image_url = None
-        if message.attachments:
-            for attachment in message.attachments:
-                if attachment.url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                    image_url = attachment.url
-        if not image_url and message.embeds:
-            embed = message.embeds[0]
-            if embed.image and embed.image.url:
-                image_url = embed.image.url
-
-        if image_url:
-            await message.channel.send("🔍 Identifying Pokémon...")
-            try:
-                label_name, confidence = predictor.predict(image_url)
-                name, random_name, dex = get_pokemon_info(label_name)
-                reply = f"🎯 Predicted Pokémon: **{name}** (confidence: {confidence})\n"
-                if random_name:
-                    reply += f"🌐 Random Name: {random_name}\n"
-                if dex:
-                    reply += f"📖 Dex Number: {dex}"
-                await message.channel.send(reply)
-            except Exception as e:
-                await message.channel.send(f"❌ Error: {e}")
-
-bot.run(TOKEN)
+            return {"error": str(e)}
