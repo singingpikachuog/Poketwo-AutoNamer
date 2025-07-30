@@ -1,90 +1,85 @@
-import onnxruntime as ort
-import numpy as np
-import requests
-from PIL import Image
-import io
 import os
+import discord
+import json
+import random
+from predict import Prediction  # your predictor
 
-SUBMODULE_PATH = os.path.dirname(os.path.realpath(__file__))  
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-ONNX_PATH = os.path.join(SUBMODULE_PATH, "model/pokemon_cnn.onnx")
-LABELS_PATH = os.path.join(SUBMODULE_PATH, "model/labels.txt")
-SAVE_PATH = os.path.join(SUBMODULE_PATH, "data/commands/pokemon/images")
+intents = discord.Intents.all()
+bot = discord.Client(intents=intents)
 
-class Prediction:
-    def __init__(self, onnx_path=ONNX_PATH, labels_path=LABELS_PATH, save_path=SAVE_PATH):
-        self.onnx_path = onnx_path
-        self.labels_path = labels_path
-        self.save_path = save_path
-        self.class_names = self.load_class_names()
-        self.ort_session = ort.InferenceSession(self.onnx_path)
+predictor = Prediction()
 
-    def generate_labels_file_from_save_path(self):
-        if not os.path.exists(self.save_path):
-            raise FileNotFoundError(f"SAVE_PATH does not exist: {self.save_path}")
-        
-        class_names = sorted([
-            d for d in os.listdir(self.save_path)
-            if os.path.isdir(os.path.join(self.save_path, d))
-        ])
+# Load Pokémon data file
+with open("pokemon_data.txt", "r", encoding="utf-8") as f:
+    pokemon_data = json.load(f)
 
-        os.makedirs(os.path.dirname(self.labels_path), exist_ok=True)
-        with open(self.labels_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(class_names))
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user}")
 
-        return class_names
+def get_pokemon_info(label_name):
+    # Extract dex number (first 4 digits from label)
+    dex_number = label_name[:4].lstrip("0")  # remove leading zeros
+    if dex_number == "":
+        dex_number = "0"
+    # Search JSON
+    for key, poke in pokemon_data.items():
+        if str(poke.get("dex_number")) == dex_number:
+            # Choose a random name from "names" dict
+            names_dict = poke.get("names", {})
+            random_name = None
+            if names_dict:
+                random_name = random.choice(list(names_dict.values()))
+            return poke.get("name"), random_name, poke.get("dex_number")
+    return label_name, None, None
 
-    def load_class_names(self):
-        if not os.path.exists(self.labels_path):
-            return self.generate_labels_file_from_save_path()
-
-        with open(self.labels_path, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-
-    def preprocess_image_from_url(self, url):
-        try:
-            response = requests.get(url)
-            image = Image.open(io.BytesIO(response.content)).convert("RGB")
-        except Exception as e:
-            raise ValueError(f"Failed to load image from URL: {e}")
-
-        image = image.resize((224, 224))
-        image = np.array(image).astype(np.float32) / 255.0
-        image = (image - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
-        image = np.transpose(image, (2, 0, 1))  # CHW
-        image = np.expand_dims(image, axis=0).astype(np.float32)  # NCHW
-        return image
-
-    def softmax(self, x):
-        e_x = np.exp(x - np.max(x))
-        return e_x / e_x.sum()
-
-    def predict(self, url):
-        image = self.preprocess_image_from_url(url)
-        inputs = {self.ort_session.get_inputs()[0].name: image}
-        outputs = self.ort_session.run(None, inputs)
-        logits = outputs[0][0]
-        pred_idx = int(np.argmax(logits))
-        prob = float(np.max(self.softmax(logits)))
-        name = self.class_names[pred_idx] if pred_idx < len(self.class_names) else f"unknown_{pred_idx}"
-        return name, f"{prob * 100:.2f}%"
-
-def main():
-    try:
-        predictor = Prediction()
-    except Exception as e:
-        print(f"Initialization error: {e}")
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
         return
 
-    while True:
-        url = input("Enter Pokémon image URL (or 'q' to quit): ").strip()
-        if url.lower() == 'q':
-            break
+    # Manual predict
+    if message.content.startswith("!identify "):
+        url = message.content.split(" ", 1)[1]
+        await message.channel.send("🔍 Identifying Pokémon...")
         try:
-            name, confidence = predictor.predict(url)
-            print(f"Predicted Pokémon: {name} (confidence: {confidence})")
+            label_name, confidence = predictor.predict(url)
+            name, random_name, dex = get_pokemon_info(label_name)
+            reply = f"🎯 Predicted Pokémon: **{name}** (confidence: {confidence})\n"
+            if random_name:
+                reply += f"🌐 Random Name: {random_name}\n"
+            if dex:
+                reply += f"📖 Dex Number: {dex}"
+            await message.channel.send(reply)
         except Exception as e:
-            print(f"Error: {e}")
+            await message.channel.send(f"❌ Error: {e}")
 
-if __name__ == "__main__":
-    main()
+    # Auto detect Pokétwo spawns
+    if message.author.id == 716390085896962058:
+        image_url = None
+        if message.attachments:
+            for attachment in message.attachments:
+                if attachment.url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    image_url = attachment.url
+        if not image_url and message.embeds:
+            embed = message.embeds[0]
+            if embed.image and embed.image.url:
+                image_url = embed.image.url
+
+        if image_url:
+            await message.channel.send("🔍 Identifying Pokémon...")
+            try:
+                label_name, confidence = predictor.predict(image_url)
+                name, random_name, dex = get_pokemon_info(label_name)
+                reply = f"🎯 Predicted Pokémon: **{name}** (confidence: {confidence})\n"
+                if random_name:
+                    reply += f"🌐 Random Name: {random_name}\n"
+                if dex:
+                    reply += f"📖 Dex Number: {dex}"
+                await message.channel.send(reply)
+            except Exception as e:
+                await message.channel.send(f"❌ Error: {e}")
+
+bot.run(TOKEN)
