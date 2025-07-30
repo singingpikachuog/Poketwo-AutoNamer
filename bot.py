@@ -58,7 +58,7 @@ async def on_message(message):
             try:
                 name, confidence = predictor.predict(image_url)
                 await message.channel.send(
-                    f"🎯 I think it's **{name}** ({confidence} confident)"
+                    f"{name} :({confidence})"
                 )
             except Exception as e:
                 await message.channel.send(f"❌ Error: {e}")
