@@ -52,7 +52,7 @@ async def on_message(message):
                 image_url = embed.image.url
 
         if image_url:
-            await message.channel.send("🔍 Identifying Pokémon...")
+            await message.channel.send("🔍 Who's That Pokémon...")
             try:
                 name, confidence = predictor.predict(image_url)
                 name = name.replace("_", " ")  # ✅ Replace underscores with spaces
